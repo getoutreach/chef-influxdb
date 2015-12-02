@@ -37,7 +37,7 @@ end
 
 def client
   require 'influxdb'
-  @client ||=
+  @client =
     InfluxDB::Client.new(
       username: auth_username,
       password: auth_password,
