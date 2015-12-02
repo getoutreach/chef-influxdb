@@ -26,18 +26,40 @@ property :permissions, Array, default: []
 property :auth_username, String, default: 'root'
 property :auth_password, String, default: 'root'
 
+# Added this so that we can deal with tcp connection resets
+# See: https://github.com/getoutreach/outreach-issues/issues/347
+def retry_on_exception(max_attempts, start_pause, multiplier, &block)
+  t = 0
+  pause = start_pause
+  begin
+    t += 1
+    yield
+  rescue StandardError => ex
+    if t <= max_attempts 
+      Chef::Log.warn("Encountered exception on attempt ##{t}; pausing for #{pause} seconds and retrying (#{ex})")
+      sleep(pause)
+      pause *= multiplier
+      retry
+    else
+      raise
+    end
+  end
+end
+
 action :create do
   unless password
     Chef::Log.fatal('You must provide a password for the :create action on this resource')
   end
-  databases.each do |db|
-    unless client.list_users.map { |x| x['username'] || x['name'] }.member?(username)
-      client.create_database_user(db, username, password)
-      updated_by_last_action true
-    end
-    permissions.each do |permission|
-      client.grant_user_privileges(username, db, permission)
-      updated_by_last_action true
+  retry_on_exception(5, 1, 2.0) do
+    databases.each do |db|
+      unless client.list_users.map { |x| x['username'] || x['name'] }.member?(username)
+        client.create_database_user(db, username, password)
+        updated_by_last_action true
+      end
+      permissions.each do |permission|
+        client.grant_user_privileges(username, db, permission)
+        updated_by_last_action true
+      end
     end
   end
 end
